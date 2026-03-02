@@ -1,65 +1,66 @@
-"""ChromaDB-basiertes Gedächtnis für KAYO."""
+"""JSON-basiertes Gedächtnis für KAYO – funktioniert mit Python 3.14+, keine ChromaDB nötig."""
 
-import chromadb
-from chromadb.utils import embedding_functions
-from datetime import datetime
+import json
+import os
+import re
 import hashlib
+from datetime import datetime
 
 
-COLLECTION_NAME = "kayo_conversations"
-N_RESULTS = 5  # Anzahl relevanter Erinnerungen die abgerufen werden
+MEMORY_FILE = "./kayo_memory.json"
+N_RESULTS = 5
+
+
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r'\b\w+\b', text.lower())
+
+
+def _jaccard(a: list[str], b: list[str]) -> float:
+    """Jaccard-Ähnlichkeit als einfaches Relevanz-Maß."""
+    if not a or not b:
+        return 0.0
+    sa, sb = set(a), set(b)
+    return len(sa & sb) / len(sa | sb)
 
 
 class Memory:
-    def __init__(self, db_path: str = "./kayo_memory"):
-        self.client = chromadb.PersistentClient(path=db_path)
-        # Nutzt das eingebaute sentence-transformers Modell für Embeddings
-        self.embed_fn = embedding_functions.DefaultEmbeddingFunction()
-        self.collection = self.client.get_or_create_collection(
-            name=COLLECTION_NAME,
-            embedding_function=self.embed_fn,
-            metadata={"hnsw:space": "cosine"},
-        )
+    def __init__(self, db_path: str = MEMORY_FILE):
+        self.path = db_path
+        self.entries: list[dict] = self._load()
+
+    def _load(self) -> list[dict]:
+        if os.path.exists(self.path):
+            with open(self.path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        return []
+
+    def _persist(self) -> None:
+        with open(self.path, "w", encoding="utf-8") as f:
+            json.dump(self.entries, f, ensure_ascii=False, indent=2)
 
     def save(self, role: str, content: str) -> None:
-        """Speichert eine Nachricht im Langzeitgedächtnis."""
+        """Speichert eine Nachricht dauerhaft."""
         timestamp = datetime.now().isoformat()
-        # Eindeutige ID aus Inhalt + Zeitstempel
         uid = hashlib.sha256(f"{timestamp}{content}".encode()).hexdigest()[:16]
-        self.collection.add(
-            documents=[content],
-            metadatas=[{"role": role, "timestamp": timestamp}],
-            ids=[uid],
-        )
+        self.entries.append({"id": uid, "role": role, "content": content, "timestamp": timestamp})
+        self._persist()
 
     def recall(self, query: str, n: int = N_RESULTS) -> list[dict]:
-        """Sucht nach relevanten früheren Nachrichten anhand einer Anfrage."""
-        count = self.collection.count()
-        if count == 0:
+        """Gibt die relevantesten Erinnerungen zur Anfrage zurück."""
+        if not self.entries:
             return []
-        results = self.collection.query(
-            query_texts=[query],
-            n_results=min(n, count),
-            include=["documents", "metadatas", "distances"],
-        )
-        memories = []
-        docs = results["documents"][0]
-        metas = results["metadatas"][0]
-        distances = results["distances"][0]
-        for doc, meta, dist in zip(docs, metas, distances):
-            # Nur relevante Erinnerungen (Cosine-Ähnlichkeit > 0.3)
-            if dist < 0.7:
-                memories.append(
-                    {
-                        "role": meta["role"],
-                        "content": doc,
-                        "timestamp": meta["timestamp"],
-                        "relevance": round(1 - dist, 2),
-                    }
-                )
-        # Sortiert nach Zeitstempel (älteste zuerst)
-        memories.sort(key=lambda x: x["timestamp"])
-        return memories
+        q_tokens = _tokenize(query)
+        scored = [
+            (e, _jaccard(q_tokens, _tokenize(e["content"])))
+            for e in self.entries
+        ]
+        # Mindest-Relevanz 0.05, dann nach Score sortieren
+        relevant = [(e, s) for e, s in scored if s >= 0.05]
+        relevant.sort(key=lambda x: (-x[1], x[0]["timestamp"]))
+        top = relevant[:n]
+        # Chronologisch ausgeben
+        top.sort(key=lambda x: x[0]["timestamp"])
+        return [{**e, "relevance": round(s, 2)} for e, s in top]
 
     def count(self) -> int:
-        return self.collection.count()
+        return len(self.entries)

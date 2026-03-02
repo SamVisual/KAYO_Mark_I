@@ -1,4 +1,4 @@
-kayo_memory/
+kayo_memory.json
 __pycache__/
 *.pyc
 .env
