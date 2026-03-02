@@ -1,0 +1,4 @@
+kayo_memory/
+__pycache__/
+*.pyc
+.env
