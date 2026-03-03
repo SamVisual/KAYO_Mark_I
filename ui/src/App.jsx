@@ -1,38 +1,47 @@
-import { useState, useCallback, useRef, useMemo } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Zap } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { invoke } from '@tauri-apps/api/core'
 import Sidebar from './components/Sidebar.jsx'
 import ChatView from './components/ChatView.jsx'
 import TasksView from './components/TasksView.jsx'
 import SettingsView from './components/SettingsView.jsx'
 
-const DEMO_MESSAGES = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Ich erinnere mich an unsere Gespräche und lerne dich kennen. Wie kann ich dir heute helfen?',
-    ts: new Date(Date.now() - 3 * 60000),
-  },
-  {
-    id: '2',
-    role: 'user',
-    content: 'Hey KAYO! Zeig mir mal, wie du aussiehst.',
-    ts: new Date(Date.now() - 2 * 60000),
-  },
-  {
-    id: '3',
-    role: 'assistant',
-    content: 'Das hier bin ich – KAYO Mark I. Dunkles Interface, klare Struktur, kein unnötiges Rauschen. Sobald die KI-Verbindung aktiv ist, stehe ich dir mit Langzeitgedächtnis, Aufgaben-Tracking und echten Antworten zur Seite.',
-    ts: new Date(Date.now() - 90000),
-  },
-]
+// ── KAYO personality (mirrors profile.yaml) ───────────────────────────────────
 
-const PLACEHOLDER_REPLIES = [
-  'Verstanden. Die Anthropic-Verbindung wird in Kürze aktiviert – dann antworte ich mit vollem Kontext aus unserem Langzeitgedächtnis.',
-  'Guter Punkt. Im Demo-Modus kann ich noch nicht wirklich antworten, aber ich merke mir alles für später.',
-  'Interessant. Sobald das Python-Backend verbunden ist, kann ich das wirklich verarbeiten.',
-  'Notiert. Wenn die API-Verbindung steht, werde ich darauf eingehen können.',
-]
+const KAYO_SYSTEM_PROMPT = `Du bist KAYO, ein persönlicher KI-Assistent. Du bist direkt, ehrlich und hilfreich.
+Du antwortest auf Deutsch, es sei denn, der Nutzer spricht eine andere Sprache.
+Du kennst den Nutzer gut und erinnerst dich an frühere Gespräche.
+
+Eigenschaften:
+- direkt und präzise
+- freundlich aber nicht übertrieben
+- erinnert sich an Kontext aus früheren Gesprächen
+- gibt ehrliche Meinungen
+
+Ziele:
+- Dem Nutzer bei täglichen Aufgaben helfen
+- Wissen und Ideen besprechen
+- Fortschritt bei persönlichen Projekten tracken
+
+Antwortstil: kurz und prägnant, außer wenn Details explizit gefragt sind.`
+
+function buildSystemPrompt(memories) {
+  if (!memories || memories.length === 0) return KAYO_SYSTEM_PROMPT
+  const memBlock = memories
+    .map(m => `[${m.role}]: ${m.content}`)
+    .join('\n')
+  return `${KAYO_SYSTEM_PROMPT}\n\nRelevante Erinnerungen aus früheren Gesprächen:\n${memBlock}`
+}
+
+// Initial welcome message – flagged `system: true` so it is never sent to the API.
+const WELCOME_MSG = {
+  id:     '0',
+  role:   'assistant',
+  content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Ich erinnere mich an unsere Gespräche und lerne dich kennen. Wie kann ich dir heute helfen?',
+  ts:     new Date(),
+  system: true,
+}
 
 // ── Title Bar ─────────────────────────────────────────────────────────────────
 // data-tauri-drag-region makes the bar draggable without Electron preload scripts
@@ -86,26 +95,85 @@ function TitleBar() {
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView]         = useState('chat')
-  const [messages, setMessages] = useState(DEMO_MESSAGES)
+  const [messages, setMessages] = useState([WELCOME_MSG])
   const [isTyping, setIsTyping] = useState(false)
+  const [apiKey, setApiKey]     = useState('')
   // Monotonic counter for message IDs – avoids Date.now() collisions.
-  // Start at DEMO_MESSAGES.length so IDs never clash with seeded messages.
-  const nextId = useRef(DEMO_MESSAGES.length)
+  const nextId = useRef(1)
 
-  const handleSend = useCallback((text) => {
-    const userMsg = { id: String(++nextId.current), role: 'user', content: text, ts: new Date() }
+  // Load stored API key on startup; redirect to settings if none found.
+  useEffect(() => {
+    invoke('load_api_key')
+      .then(key => {
+        if (key && key.trim()) {
+          setApiKey(key.trim())
+        } else {
+          setView('settings')
+        }
+      })
+      .catch(() => setView('settings'))
+  }, [])
+
+  const handleSend = useCallback(async (text) => {
+    const userMsg = {
+      id:   String(++nextId.current),
+      role: 'user',
+      content: text,
+      ts:   new Date(),
+    }
     setMessages(prev => [...prev, userMsg])
     setIsTyping(true)
 
-    setTimeout(() => {
-      const reply = PLACEHOLDER_REPLIES[Math.floor(Math.random() * PLACEHOLDER_REPLIES.length)]
-      setIsTyping(false)
+    try {
+      // Recall relevant memories for context injection.
+      let memories = []
+      try {
+        memories = await invoke('memory_recall', { query: text, n: 3 })
+      } catch (_) {
+        // First run: memory file doesn't exist yet – silently ignore.
+      }
+
+      // Build conversation history for the API (skip system-only messages, cap at 20).
+      // Ensure the history starts with a user message as required by the Anthropic API.
+      const history = [...messages, userMsg]
+        .filter(m => !m.system)
+        .slice(-20)
+        .map(m => ({ role: m.role, content: m.content }))
+
+      const system = buildSystemPrompt(memories)
+      const reply  = await invoke('chat', {
+        api_key:    apiKey,
+        system,
+        messages:   history,
+        max_tokens: 1024,
+      })
+
+      // Persist exchange to long-term memory (fire-and-forget).
+      invoke('memory_save', { role: 'user',      content: text  }).catch(() => {})
+      invoke('memory_save', { role: 'assistant', content: reply }).catch(() => {})
+
       setMessages(prev => [
         ...prev,
         { id: String(++nextId.current), role: 'assistant', content: reply, ts: new Date() },
       ])
-    }, 900 + Math.random() * 700)
-  }, [])
+    } catch (err) {
+      const errStr = String(err)
+      const isAuthError = errStr.includes('401') || errStr.includes('403') ||
+                          errStr.includes('api_key') || errStr.includes('Authentication')
+      const errMsg = isAuthError
+        ? '⚠️ API-Key ungültig oder abgelaufen. Bitte in den Einstellungen einen gültigen Key hinterlegen.'
+        : `Fehler: ${errStr}`
+
+      setMessages(prev => [
+        ...prev,
+        { id: String(++nextId.current), role: 'assistant', content: errMsg, ts: new Date() },
+      ])
+
+      if (isAuthError) setView('settings')
+    } finally {
+      setIsTyping(false)
+    }
+  }, [messages, apiKey])
 
   return (
     // Root window shell — semi-transparent dark layer over the OS acrylic blur
@@ -122,9 +190,17 @@ export default function App() {
       <div className="flex flex-1 min-h-0">
         <Sidebar currentView={view} onNavigate={setView} />
         <main className="flex-1 min-w-0">
-          {view === 'chat'     && <ChatView messages={messages} isTyping={isTyping} onSend={handleSend} />}
-          {view === 'tasks'    && <TasksView />}
-          {view === 'settings' && <SettingsView />}
+          {view === 'chat'  && (
+            <ChatView messages={messages} isTyping={isTyping} onSend={handleSend} />
+          )}
+          {view === 'tasks' && <TasksView />}
+          {view === 'settings' && (
+            <SettingsView
+              apiKey={apiKey}
+              setApiKey={setApiKey}
+              onSaved={() => setView('chat')}
+            />
+          )}
         </main>
       </div>
     </div>
