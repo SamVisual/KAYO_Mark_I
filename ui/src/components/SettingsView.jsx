@@ -1,0 +1,17 @@
+import { Settings } from 'lucide-react'
+
+export default function SettingsView() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-3 anim-fade-up">
+      <div
+        className="w-14 h-14 rounded-2xl flex items-center justify-center"
+        style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}
+      >
+        <Settings size={24} style={{ color: 'rgba(255,255,255,0.28)' }} />
+      </div>
+      <p className="text-sm font-medium" style={{ color: 'rgba(255,255,255,0.35)' }}>
+        Einstellungen · kommt bald
+      </p>
+    </div>
+  )
+}
