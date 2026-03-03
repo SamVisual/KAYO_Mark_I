@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+/// Hard cap on max_tokens to prevent accidental runaway API spend.
+const MAX_TOKENS_LIMIT: u32 = 4096;
+
 // ── Data types ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -26,7 +31,18 @@ pub struct AnthropicResponse {
 pub struct AnthropicContent {
     #[serde(rename = "type")]
     pub kind: String,
-    pub text: String,
+    /// Only present on `type: "text"` blocks; other block types (tool_use,
+    /// thinking, etc.) omit this field, so it must be optional.
+    pub text: Option<String>,
+}
+
+// ── App state ─────────────────────────────────────────────────────────────────
+
+/// Shared application state managed by Tauri.
+/// Holding the HTTP client here enables TCP connection reuse (keep-alive)
+/// across all `chat` calls instead of recreating the pool per request.
+pub struct AppState {
+    pub client: reqwest::Client,
 }
 
 // ── Tauri Commands ────────────────────────────────────────────────────────────
@@ -35,21 +51,30 @@ pub struct AnthropicContent {
 /// API key stays in the Rust process – never exposed to the frontend.
 #[tauri::command]
 async fn chat(
+    state:      tauri::State<'_, AppState>,
     api_key:    String,
     system:     String,
     messages:   Vec<ChatMessage>,
     max_tokens: Option<u32>,
 ) -> Result<String, String> {
-    let client = reqwest::Client::new();
+    // Validate message roles before sending to the API.
+    for msg in &messages {
+        if msg.role != "user" && msg.role != "assistant" {
+            return Err(format!("Ungültige Nachrichtenrolle: '{}'", msg.role));
+        }
+    }
+
+    // Cap max_tokens to avoid unintentional runaway API spend.
+    let tokens = max_tokens.unwrap_or(1024).min(MAX_TOKENS_LIMIT);
 
     let body = AnthropicRequest {
         model:      "claude-opus-4-6".to_string(),
-        max_tokens: max_tokens.unwrap_or(1024),
+        max_tokens: tokens,
         system,
         messages,
     };
 
-    let response = client
+    let response = state.client
         .post("https://api.anthropic.com/v1/messages")
         .header("x-api-key",         &api_key)
         .header("anthropic-version",  "2023-06-01")
@@ -57,25 +82,25 @@ async fn chat(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Network error: {e}"))?;
+        .map_err(|e| format!("Netzwerkfehler: {e}"))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let text   = response.text().await.unwrap_or_default();
-        return Err(format!("API error {status}: {text}"));
+        return Err(format!("API-Fehler {status}: {text}"));
     }
 
     let parsed: AnthropicResponse = response
         .json()
         .await
-        .map_err(|e| format!("Parse error: {e}"))?;
+        .map_err(|e| format!("Parsing-Fehler: {e}"))?;
 
     parsed
         .content
         .into_iter()
-        .find(|c| c.kind == "text")
-        .map(|c| c.text)
-        .ok_or_else(|| "Empty response from API".to_string())
+        .find(|c| c.kind == "text" && c.text.is_some())
+        .and_then(|c| c.text)
+        .ok_or_else(|| "Leere Antwort von der API".to_string())
 }
 
 /// Retrieve the Tauri app data directory path (for kayo-memory.json).
@@ -93,6 +118,9 @@ fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .manage(AppState {
+            client: reqwest::Client::new(),
+        })
         .setup(|app| {
             let window = app.get_webview_window("main")
                 .expect("main window not found");

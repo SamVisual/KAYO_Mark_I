@@ -20,10 +20,14 @@ SESSION_HISTORY_LIMIT = 20
 
 def load_profile(path: str = PROFILE_PATH) -> dict:
     if not os.path.exists(path):
-        print(f"[WARNUNG] Profildatei '{path}' nicht gefunden. Erstelle Standard-Profil.")
+        print(f"[WARNUNG] Profildatei '{path}' nicht gefunden. Verwende Standard-Profil.")
         return {"user": {"name": "Nutzer"}, "personality": {"description": "Du bist ein hilfreicher Assistent."}, "goals": [], "preferences": {}}
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        print(f"[WARNUNG] Profildatei konnte nicht geparst werden: {e}. Verwende Standard-Profil.")
+        return {"user": {"name": "Nutzer"}, "personality": {"description": "Du bist ein hilfreicher Assistent."}, "goals": [], "preferences": {}}
 
 
 def build_system_prompt(profile: dict, memories: list[dict]) -> str:
@@ -115,7 +119,7 @@ def main():
             break
 
         if user_input.lower() == "memory":
-            print(f"\n[Gedächtnis] {mem_count} Einträge gespeichert.")
+            print(f"\n[Gedächtnis] {memory.count()} Einträge gespeichert.")
             recent = memory.recall(user_input, n=5)
             if recent:
                 print("Letzte relevante Erinnerungen:")
@@ -124,7 +128,7 @@ def main():
                     print(f"  [{ts}] {m['role']}: {m['content'][:80]}...")
             continue
 
-        # Relevante Erinnerungen aus ChromaDB abrufen
+        # Relevante Erinnerungen abrufen
         memories = memory.recall(user_input)
 
         # System-Prompt mit Profil + Erinnerungen aufbauen

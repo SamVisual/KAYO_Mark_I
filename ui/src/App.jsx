@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { Zap } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import Sidebar from './components/Sidebar.jsx'
@@ -37,7 +37,9 @@ const PLACEHOLDER_REPLIES = [
 // ── Title Bar ─────────────────────────────────────────────────────────────────
 // data-tauri-drag-region makes the bar draggable without Electron preload scripts
 function TitleBar() {
-  const win = getCurrentWindow()
+  // Memoize the window reference so the Tauri IPC call fires only once,
+  // not on every re-render of TitleBar.
+  const win = useMemo(() => getCurrentWindow(), [])
 
   const controls = [
     { label: '−', action: () => win.minimize(),        hover: 'hover:bg-white/10'   },
@@ -83,12 +85,15 @@ function TitleBar() {
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [view, setView]       = useState('chat')
+  const [view, setView]         = useState('chat')
   const [messages, setMessages] = useState(DEMO_MESSAGES)
   const [isTyping, setIsTyping] = useState(false)
+  // Monotonic counter for message IDs – avoids Date.now() collisions.
+  // Start at DEMO_MESSAGES.length so IDs never clash with seeded messages.
+  const nextId = useRef(DEMO_MESSAGES.length)
 
   const handleSend = useCallback((text) => {
-    const userMsg = { id: String(Date.now()), role: 'user', content: text, ts: new Date() }
+    const userMsg = { id: String(++nextId.current), role: 'user', content: text, ts: new Date() }
     setMessages(prev => [...prev, userMsg])
     setIsTyping(true)
 
@@ -97,7 +102,7 @@ export default function App() {
       setIsTyping(false)
       setMessages(prev => [
         ...prev,
-        { id: String(Date.now() + 1), role: 'assistant', content: reply, ts: new Date() },
+        { id: String(++nextId.current), role: 'assistant', content: reply, ts: new Date() },
       ])
     }, 900 + Math.random() * 700)
   }, [])

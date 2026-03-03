@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { MessageSquare, CheckSquare, Settings, Zap } from 'lucide-react'
 
 const NAV = [
@@ -7,6 +8,9 @@ const NAV = [
 ]
 
 export default function Sidebar({ currentView, onNavigate }) {
+  // Track hovered nav item in React state to avoid direct DOM style mutations.
+  const [hoveredId, setHoveredId] = useState(null)
+
   return (
     <aside
       className="flex flex-col items-center py-4 gap-1 shrink-0"
@@ -25,21 +29,30 @@ export default function Sidebar({ currentView, onNavigate }) {
       </div>
 
       {/* Nav items */}
-      <nav className="flex flex-col items-center gap-1 flex-1">
+      <nav className="flex flex-col items-center gap-1 flex-1" aria-label="Hauptnavigation">
         {NAV.map(({ id, Icon, label }) => {
-          const active = currentView === id
+          const active  = currentView === id
+          const hovered = hoveredId === id
+
           return (
             <button
               key={id}
               onClick={() => onNavigate(id)}
-              title={label}
+              onMouseEnter={() => setHoveredId(id)}
+              onMouseLeave={() => setHoveredId(null)}
+              aria-label={label}
+              aria-current={active ? 'page' : undefined}
               className="group relative w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200"
               style={{
-                background: active ? 'rgba(129,140,248,0.14)' : 'transparent',
-                border:     active ? '1px solid rgba(129,140,248,0.28)' : '1px solid transparent',
+                background: active
+                  ? 'rgba(129,140,248,0.14)'
+                  : hovered
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'transparent',
+                border: active
+                  ? '1px solid rgba(129,140,248,0.28)'
+                  : '1px solid transparent',
               }}
-              onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'rgba(255,255,255,0.06)' }}
-              onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent' }}
             >
               <Icon
                 size={18}

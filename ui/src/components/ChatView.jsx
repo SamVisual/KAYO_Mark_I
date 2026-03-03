@@ -77,7 +77,10 @@ export default function ChatView({ messages, isTyping, onSend }) {
               groupWithPrev={i > 0 && messages[i - 1].role === msg.role}
             />
           ))}
-          {isTyping && <TypingIndicator />}
+          {/* aria-live region ensures screen readers announce the typing state. */}
+          <div aria-live="polite" aria-label={isTyping ? 'KAYO schreibt…' : undefined}>
+            {isTyping && <TypingIndicator />}
+          </div>
           <div ref={bottomRef} />
         </div>
       </div>

@@ -60,6 +60,7 @@ export default function InputBar({ onSend, disabled }) {
       <button
         onClick={send}
         disabled={!canSend}
+        aria-label="Nachricht senden"
         className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-all duration-150"
         style={{
           background: canSend
