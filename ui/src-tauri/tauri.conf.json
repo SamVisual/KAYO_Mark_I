@@ -38,10 +38,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "nsis": {
-      "installerIcon":           "icons/icon.ico",
-      "languages":               ["German"],
-      "displayLanguageSelector": false
+    "windows": {
+      "nsis": {
+        "installerIcon":           "icons/icon.ico",
+        "languages":               ["German"],
+        "displayLanguageSelector": false
+      }
     }
   }
 }
