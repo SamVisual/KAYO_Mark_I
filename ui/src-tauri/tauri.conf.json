@@ -38,15 +38,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "windows": {
-      "nsis": {
-        "installerIcon":   "icons/icon.ico",
-        "headerImage":     null,
-        "sidebarImage":    null,
-        "license":         null,
-        "languages":       ["German"],
-        "displayLanguageSelector": false
-      }
+    "nsis": {
+      "installerIcon":           "icons/icon.ico",
+      "languages":               ["German"],
+      "displayLanguageSelector": false
     }
   }
 }
