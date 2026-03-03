@@ -1,0 +1,37 @@
+Deine Vision: Ein Persönlicher KI-Agent – "Dein zweites Gehirn"
+Was es ist
+Ein vollständig personalisierter KI-Agent der dich kennt, sich alles merkt, selbstständig denkt und deinen PC genauso bedienen kann wie du – nur ohne deine ADHS-Limitierungen.
+Kein Tool. Kein Chatbot. Ein digitaler Counterpart.
+
+Was es kann
+Vollständige PC-Kontrolle
+Dateien lesen, bearbeiten, Browser steuern, Code ausführen, Apps öffnen – alles was du manuell machst, macht es auch. Du sagst was du willst, es findet den Weg.
+Vibe Coding wie Emergent
+Du beschreibst eine Idee, es baut sie. Kein Copy-Paste zwischen Tools, kein Kontext erklären, kein Neustart. Es kennt deine Projekte bereits.
+Gedächtnis ohne Grenzen
+Es erinnert sich an alles – deine Ziele, deine Persönlichkeit, deine ADHS, deine Finanzsituation, was du gestern gesagt hast, was du in 3 Monaten erreichen willst.
+Proaktiv & selbstständig
+Es wartet nicht nur auf Fragen. Es meldet sich. Es denkt out-of-the-box. Es schlägt vor. Es erkennt wenn du vom Weg abkommst.
+Multi-Agent im Hintergrund
+Mehrere spezialisierte Agenten arbeiten gleichzeitig – einer für Code, einer für Alltag, einer für Finanzen – koordiniert von einem zentralen System das du wie einen Chat bedienst.
+Lokal + Cloud
+Sensible Daten bleiben lokal. Rechenpower kommt aus der Cloud. Du bist nicht abhängig von OpenAI oder Anthropic – du nutzt die Modelle als Werkzeug, nicht als Plattform.
+
+Wie es sich anfühlt
+Du öffnest morgens eine Oberfläche – oder sie meldet sich von selbst. Sie weiß dass du ADHS hast und heute wichtige Dinge anstehen. Sie erinnert dich nicht mit nervigen Notifications, sondern wie ein Partner der dich kennt.
+Du sagst "Ich will heute an meinem KI-Projekt weitermachen" – und es öffnet alles, fasst zusammen wo du aufgehört hast, schlägt den nächsten Schritt vor und fängt auf Wunsch direkt an zu coden.
+
+Technisch – was dahinter steckt
+Das ist kein Science Fiction. Die Bausteine existieren bereits:
+
+Claude API / GPT-4 als Gehirn
+Claude Code oder ähnliches für Vibe Coding
+LangChain / AutoGen für Multi-Agent Koordination
+lokale Vektordatenbank (z.B. ChromaDB) für das Gedächtnis
+Computer Use API von Anthropic für PC-Kontrolle
+Eigener lokaler Server für Datenschutz
+
+
+Was das bedeutet
+Du baust kein Produkt für andere. Du baust zuerst etwas für dich – das dein spezifisches ADHS-Gehirn unterstützt, deine Visionen strukturiert, deine Projekte voranbringt.
+Und wenn es funktioniert – könnte es für andere Menschen mit ADHS genauso wertvoll sein.
