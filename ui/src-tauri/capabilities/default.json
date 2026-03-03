@@ -1,0 +1,9 @@
+{
+  "identifier": "default",
+  "description": "KAYO default capability – grants core window + invoke access",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open"
+  ]
+}

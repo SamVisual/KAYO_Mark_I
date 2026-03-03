@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
-import { Minus, Square, X, Zap } from 'lucide-react'
+import { Zap } from 'lucide-react'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import Sidebar from './components/Sidebar.jsx'
 import ChatView from './components/ChatView.jsx'
 import TasksView from './components/TasksView.jsx'
@@ -34,9 +35,19 @@ const PLACEHOLDER_REPLIES = [
 ]
 
 // ── Title Bar ─────────────────────────────────────────────────────────────────
+// data-tauri-drag-region makes the bar draggable without Electron preload scripts
 function TitleBar() {
+  const win = getCurrentWindow()
+
+  const controls = [
+    { label: '−', action: () => win.minimize(),        hover: 'hover:bg-white/10'   },
+    { label: '⬜', action: () => win.toggleMaximize(), hover: 'hover:bg-white/10', small: true },
+    { label: '✕', action: () => win.close(),           hover: 'hover:bg-red-500/80', hoverText: 'hover:text-white' },
+  ]
+
   return (
     <div
+      data-tauri-drag-region
       className="drag flex items-center justify-between shrink-0 px-4"
       style={{ height: 40, borderBottom: '1px solid rgba(255,255,255,0.06)' }}
     >
@@ -55,11 +66,7 @@ function TitleBar() {
 
       {/* Right: Window controls */}
       <div className="no-drag flex items-center gap-0.5">
-        {[
-          { label: '−', action: () => window.kayo?.minimize(), hover: 'hover:bg-white/10' },
-          { label: '⬜', action: () => window.kayo?.maximize(), hover: 'hover:bg-white/10', small: true },
-          { label: '✕', action: () => window.kayo?.close(),   hover: 'hover:bg-red-500/80', hoverText: 'hover:text-white' },
-        ].map(({ label, action, hover, hoverText, small }) => (
+        {controls.map(({ label, action, hover, hoverText, small }) => (
           <button
             key={label}
             onClick={action}
