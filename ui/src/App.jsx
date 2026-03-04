@@ -1,77 +1,119 @@
-import { useState, useCallback } from 'react'
-import { Zap } from 'lucide-react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
+import { Zap, Bot, Brain, FolderOpen, Clock } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import Sidebar from './components/Sidebar.jsx'
-import ChatView from './components/ChatView.jsx'
-import TasksView from './components/TasksView.jsx'
+import { IS_TAURI, safeInvoke as invoke } from './tauri.js'
+import Sidebar      from './components/Sidebar.jsx'
+import HomeView     from './components/HomeView.jsx'
+import ChatView     from './components/ChatView.jsx'
+import TasksView    from './components/TasksView.jsx'
 import SettingsView from './components/SettingsView.jsx'
 
-const DEMO_MESSAGES = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Ich erinnere mich an unsere Gespräche und lerne dich kennen. Wie kann ich dir heute helfen?',
-    ts: new Date(Date.now() - 3 * 60000),
-  },
-  {
-    id: '2',
-    role: 'user',
-    content: 'Hey KAYO! Zeig mir mal, wie du aussiehst.',
-    ts: new Date(Date.now() - 2 * 60000),
-  },
-  {
-    id: '3',
-    role: 'assistant',
-    content: 'Das hier bin ich – KAYO Mark I. Dunkles Interface, klare Struktur, kein unnötiges Rauschen. Sobald die KI-Verbindung aktiv ist, stehe ich dir mit Langzeitgedächtnis, Aufgaben-Tracking und echten Antworten zur Seite.',
-    ts: new Date(Date.now() - 90000),
-  },
-]
+// ── KAYO personality (mirrors profile.yaml) ───────────────────────────────────
 
-const PLACEHOLDER_REPLIES = [
-  'Verstanden. Die Anthropic-Verbindung wird in Kürze aktiviert – dann antworte ich mit vollem Kontext aus unserem Langzeitgedächtnis.',
-  'Guter Punkt. Im Demo-Modus kann ich noch nicht wirklich antworten, aber ich merke mir alles für später.',
-  'Interessant. Sobald das Python-Backend verbunden ist, kann ich das wirklich verarbeiten.',
-  'Notiert. Wenn die API-Verbindung steht, werde ich darauf eingehen können.',
-]
+const KAYO_BASE_PROMPT = `Du bist KAYO, ein persönlicher KI-Assistent. Du bist direkt, ehrlich und hilfreich.
+Du antwortest auf Deutsch, es sei denn, der Nutzer spricht eine andere Sprache.
+Du kennst den Nutzer gut und erinnerst dich an frühere Gespräche.
+
+Eigenschaften:
+- direkt und präzise
+- freundlich aber nicht übertrieben
+- erinnert sich an Kontext aus früheren Gesprächen
+- gibt ehrliche Meinungen
+
+Ziele:
+- Dem Nutzer bei täglichen Aufgaben helfen
+- Wissen und Ideen besprechen
+- Fortschritt bei persönlichen Projekten tracken
+
+Antwortstil: kurz und prägnant, außer wenn Details explizit gefragt sind.`
+
+const AGENT_CONTEXT = {
+  claude:   '',
+  coder:    'Fokus auf Programmierung, Code-Review, technische Lösungen und Architektur. Antworte mit Codebeispielen wenn hilfreich.',
+  alltag:   'Fokus auf Alltag, Tagesplanung, persönliche Produktivität und Aufgabenmanagement.',
+  finanzen: 'Fokus auf persönliche Finanzen, Budgetierung, Sparen und Investmentgrundlagen.',
+}
+
+function buildSystemPrompt(memories, agentKey) {
+  let prompt = KAYO_BASE_PROMPT
+  const extra = AGENT_CONTEXT[agentKey] ?? ''
+  if (extra) prompt += `\n\n${extra}`
+  if (memories?.length > 0) {
+    const memBlock = memories.map(m => `[${m.role}]: ${m.content}`).join('\n')
+    prompt += `\n\nRelevante Erinnerungen aus früheren Gesprächen:\n${memBlock}`
+  }
+  return prompt
+}
+
+// Factory so every "Neuer Chat" gets a fresh timestamp (BUG #5).
+function makeWelcomeMsg() {
+  return {
+    id:      '0',
+    role:    'assistant',
+    content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Ich erinnere mich an unsere Gespräche und lerne dich kennen. Wie kann ich dir heute helfen?',
+    ts:      new Date(),
+    system:  true,
+  }
+}
+
+// ── Coming-soon placeholder ───────────────────────────────────────────────────
+
+const VIEW_META = {
+  agents:  { label: 'Agenten',    Icon: Bot        },
+  memory:  { label: 'Gedächtnis', Icon: Brain      },
+  files:   { label: 'Dateien',    Icon: FolderOpen },
+  history: { label: 'Verlauf',    Icon: Clock      },
+}
+
+function ComingSoon({ view }) {
+  const { label, Icon } = VIEW_META[view] ?? { label: view, Icon: Zap }
+  return (
+    <div className="flex flex-col items-center justify-center h-full gap-4 anim-fade-up">
+      <div
+        className="w-14 h-14 rounded-2xl flex items-center justify-center"
+        style={{ background: 'rgba(0,212,255,0.07)', border: '1px solid rgba(0,212,255,0.15)' }}
+      >
+        <Icon size={22} style={{ color: 'rgba(0,212,255,0.5)' }} />
+      </div>
+      <div className="text-center">
+        <p className="text-sm font-semibold" style={{ color: 'rgba(255,255,255,0.45)' }}>{label}</p>
+        <p className="font-mono-label mt-1" style={{ color: 'rgba(255,255,255,0.2)' }}>kommt bald</p>
+      </div>
+    </div>
+  )
+}
 
 // ── Title Bar ─────────────────────────────────────────────────────────────────
-// data-tauri-drag-region makes the bar draggable without Electron preload scripts
+
 function TitleBar() {
-  const win = getCurrentWindow()
+  const win                           = useMemo(() => IS_TAURI ? getCurrentWindow() : null, [])
+  const [hoveredCtrl, setHoveredCtrl] = useState(null)
 
   const controls = [
-    { label: '−', action: () => win.minimize(),        hover: 'hover:bg-white/10'   },
-    { label: '⬜', action: () => win.toggleMaximize(), hover: 'hover:bg-white/10', small: true },
-    { label: '✕', action: () => win.close(),           hover: 'hover:bg-red-500/80', hoverText: 'hover:text-white' },
+    { id: 'min',   label: '−',  action: () => win?.minimize(),        hoverBg: 'rgba(255,255,255,0.1)'  },
+    { id: 'max',   label: '⬜', action: () => win?.toggleMaximize(), hoverBg: 'rgba(255,255,255,0.1)', small: true },
+    { id: 'close', label: '✕',  action: () => win?.close(),           hoverBg: 'rgba(239,68,68,0.75)'  },
   ]
 
   return (
     <div
       data-tauri-drag-region
-      className="drag flex items-center justify-between shrink-0 px-4"
-      style={{ height: 40, borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+      className="drag flex items-center justify-end shrink-0 px-3"
+      style={{ height: 36, borderBottom: '1px solid rgba(255,255,255,0.05)' }}
     >
-      {/* Left: Logo + name */}
-      <div className="no-drag flex items-center gap-2 pointer-events-none">
-        <div
-          className="w-5 h-5 rounded-md flex items-center justify-center accent-glow"
-          style={{ background: 'linear-gradient(135deg, #818cf8, #a78bfa)' }}
-        >
-          <Zap size={11} className="text-white" />
-        </div>
-        <span className="text-xs font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.45)' }}>
-          KAYO Mark I
-        </span>
-      </div>
-
-      {/* Right: Window controls */}
       <div className="no-drag flex items-center gap-0.5">
-        {controls.map(({ label, action, hover, hoverText, small }) => (
+        {controls.map(({ id, label, action, hoverBg, small }) => (
           <button
-            key={label}
+            key={id}
             onClick={action}
-            className={`w-8 h-8 rounded flex items-center justify-center transition-colors duration-150 ${hover} ${hoverText ?? ''}`}
-            style={{ color: 'rgba(255,255,255,0.4)', fontSize: small ? 9 : 13 }}
+            onMouseEnter={() => setHoveredCtrl(id)}
+            onMouseLeave={() => setHoveredCtrl(null)}
+            className="w-8 h-7 rounded flex items-center justify-center transition-colors duration-100"
+            style={{
+              background: hoveredCtrl === id ? hoverBg : 'transparent',
+              color:      hoveredCtrl === id && id === 'close' ? '#fff' : 'rgba(255,255,255,0.35)',
+              fontSize:   small ? 9 : 12,
+            }}
           >
             {label}
           </button>
@@ -82,44 +124,155 @@ function TitleBar() {
 }
 
 // ── Root App ─────────────────────────────────────────────────────────────────
-export default function App() {
-  const [view, setView]       = useState('chat')
-  const [messages, setMessages] = useState(DEMO_MESSAGES)
-  const [isTyping, setIsTyping] = useState(false)
 
-  const handleSend = useCallback((text) => {
-    const userMsg = { id: String(Date.now()), role: 'user', content: text, ts: new Date() }
+export default function App() {
+  const [view, setView]               = useState('home')
+  const [messages, setMessages]       = useState(() => [makeWelcomeMsg()])
+  const [isTyping, setIsTyping]       = useState(false)
+  const [apiKey, setApiKey]           = useState('')
+  const [activeAgent, setActiveAgent] = useState('claude')
+  const nextId                        = useRef(1)
+
+  // Load stored API key on startup; redirect to settings if missing.
+  useEffect(() => {
+    invoke('load_api_key')
+      .then(key => {
+        if (key?.trim()) setApiKey(key.trim())
+        else setView('settings')
+      })
+      .catch(() => setView('settings'))
+  }, [])
+
+  // ── Core chat pipeline ──
+  const handleSend = useCallback(async (text) => {
+    const userMsg = {
+      id:      String(++nextId.current),
+      role:    'user',
+      content: text,
+      ts:      new Date(),
+    }
     setMessages(prev => [...prev, userMsg])
     setIsTyping(true)
 
-    setTimeout(() => {
-      const reply = PLACEHOLDER_REPLIES[Math.floor(Math.random() * PLACEHOLDER_REPLIES.length)]
-      setIsTyping(false)
+    try {
+      let memories = []
+      try { memories = await invoke('memory_recall', { query: text, n: 3 }) } catch (_) {}
+
+      // Build history starting from first user message (Anthropic API requirement).
+      const history = [...messages, userMsg]
+        .filter(m => !m.system)
+        .slice(-20)
+        .map(m => ({ role: m.role, content: m.content }))
+
+      const system = buildSystemPrompt(memories, activeAgent)
+      const reply  = await invoke('chat', {
+        api_key:    apiKey,
+        system,
+        messages:   history,
+        max_tokens: 1024,
+      })
+
+      // Persist exchange sequentially to avoid race condition (BUG #2):
+      // both saves modify the same JSON file; concurrent writes lose one entry.
+      invoke('memory_save', { role: 'user', content: text })
+        .then(() => invoke('memory_save', { role: 'assistant', content: reply }))
+        .catch(() => {})
+
       setMessages(prev => [
         ...prev,
-        { id: String(Date.now() + 1), role: 'assistant', content: reply, ts: new Date() },
+        { id: String(++nextId.current), role: 'assistant', content: reply, ts: new Date() },
       ])
-    }, 900 + Math.random() * 700)
+    } catch (err) {
+      const s      = String(err)
+      const isAuth = s.includes('401') || s.includes('403') ||
+                     s.includes('api_key') || s.includes('Authentication')
+      const msg = isAuth
+        ? '⚠️ API-Key ungültig oder nicht gesetzt. Bitte in den Einstellungen konfigurieren.'
+        : `Fehler: ${s}`
+
+      setMessages(prev => [
+        ...prev,
+        { id: String(++nextId.current), role: 'assistant', content: msg, ts: new Date() },
+      ])
+      if (isAuth) setView('settings')
+    } finally {
+      setIsTyping(false)
+    }
+  }, [messages, apiKey, activeAgent])
+
+  // From Home: switch to Chat view and send in one go.
+  const handleHomeSend = useCallback((text) => {
+    setView('chat')
+    handleSend(text)
+  }, [handleSend])
+
+  // Reset to fresh Home view.
+  const handleNewChat = useCallback(() => {
+    setMessages([makeWelcomeMsg()])
+    nextId.current = 1
+    setView('home')
   }, [])
 
   return (
-    // Root window shell — semi-transparent dark layer over the OS acrylic blur
     <div
       className="flex flex-col h-full"
       style={{
-        background:    'rgba(9, 9, 18, 0.87)',
-        borderRadius:  10,
-        overflow:      'hidden',
-        boxShadow:     '0 0 0 1px rgba(255,255,255,0.07), 0 24px 60px rgba(0,0,0,0.55)',
+        background:   '#0d0d0d',
+        borderRadius: 10,
+        overflow:     'hidden',
+        boxShadow:    '0 0 0 1px rgba(255,255,255,0.06), 0 24px 60px rgba(0,0,0,0.7)',
       }}
     >
-      <TitleBar />
+      {/* Film-grain texture overlay (defined in index.css) */}
+      <div className="grain-overlay" />
+
+      {IS_TAURI && <TitleBar />}
+
       <div className="flex flex-1 min-h-0">
-        <Sidebar currentView={view} onNavigate={setView} />
-        <main className="flex-1 min-w-0">
-          {view === 'chat'     && <ChatView messages={messages} isTyping={isTyping} onSend={handleSend} />}
-          {view === 'tasks'    && <TasksView />}
-          {view === 'settings' && <SettingsView />}
+        <Sidebar
+          currentView={view}
+          onNavigate={setView}
+          onNewChat={handleNewChat}
+          activeAgent={activeAgent}
+          onContextChange={setActiveAgent}
+        />
+
+        <main className="flex-1 min-w-0 relative">
+          {view === 'home' && (
+            <HomeView
+              messages={messages}
+              activeAgent={activeAgent}
+              onAgentChange={setActiveAgent}
+              onSend={handleHomeSend}
+              isTyping={isTyping}
+              onContinueChat={() => setView('chat')}
+            />
+          )}
+
+          {view === 'chat' && (
+            <ChatView
+              messages={messages}
+              isTyping={isTyping}
+              onSend={handleSend}
+              activeAgent={activeAgent}
+            />
+          )}
+
+          {view === 'settings' && (
+            <SettingsView
+              apiKey={apiKey}
+              setApiKey={setApiKey}
+              onSaved={() => setView('home')}
+            />
+          )}
+
+          {/* Legacy tasks view */}
+          {view === 'tasks' && <TasksView />}
+
+          {/* Coming-soon stubs */}
+          {['agents', 'memory', 'files', 'history'].includes(view) && (
+            <ComingSoon view={view} />
+          )}
         </main>
       </div>
     </div>

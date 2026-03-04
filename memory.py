@@ -4,6 +4,7 @@ import json
 import os
 import re
 import hashlib
+import tempfile
 from datetime import datetime
 
 
@@ -29,14 +30,27 @@ class Memory:
         self.entries: list[dict] = self._load()
 
     def _load(self) -> list[dict]:
-        if os.path.exists(self.path):
+        if not os.path.exists(self.path):
+            return []
+        try:
             with open(self.path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        return []
+        except (json.JSONDecodeError, OSError) as e:
+            print(f"[WARNUNG] Gedächtnis konnte nicht geladen werden ({e}). Starte mit leerem Gedächtnis.")
+            return []
 
     def _persist(self) -> None:
-        with open(self.path, "w", encoding="utf-8") as f:
-            json.dump(self.entries, f, ensure_ascii=False, indent=2)
+        """Schreibt atomar: zuerst in eine Temp-Datei, dann atomares Umbenennen."""
+        dir_name = os.path.dirname(os.path.abspath(self.path))
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w", dir=dir_name, encoding="utf-8", delete=False, suffix=".tmp"
+            ) as tmp:
+                json.dump(self.entries, tmp, ensure_ascii=False, indent=2)
+                tmp_path = tmp.name
+            os.replace(tmp_path, self.path)
+        except OSError as e:
+            print(f"[WARNUNG] Gedächtnis konnte nicht gespeichert werden: {e}")
 
     def save(self, role: str, content: str) -> None:
         """Speichert eine Nachricht dauerhaft."""
