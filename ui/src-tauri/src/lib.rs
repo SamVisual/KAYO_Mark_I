@@ -78,6 +78,12 @@ async fn chat(
         .ok_or_else(|| "Empty response from API".to_string())
 }
 
+/// Read ANTHROPIC_API_KEY from the environment (if set).
+#[tauri::command]
+fn get_env_api_key() -> Option<String> {
+    std::env::var("ANTHROPIC_API_KEY").ok()
+}
+
 /// Retrieve the Tauri app data directory path (for kayo-memory.json).
 #[tauri::command]
 fn get_app_data_dir(app: tauri::AppHandle) -> Result<String, String> {
@@ -119,7 +125,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![chat, get_app_data_dir])
+        .invoke_handler(tauri::generate_handler![chat, get_env_api_key, get_app_data_dir])
         .run(tauri::generate_context!())
         .expect("error while running KAYO application")
 }

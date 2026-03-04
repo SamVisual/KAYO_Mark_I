@@ -1,38 +1,31 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Zap } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { invoke } from '@tauri-apps/api/core'
 import Sidebar from './components/Sidebar.jsx'
 import ChatView from './components/ChatView.jsx'
 import TasksView from './components/TasksView.jsx'
 import SettingsView from './components/SettingsView.jsx'
 
-const DEMO_MESSAGES = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Ich erinnere mich an unsere Gespräche und lerne dich kennen. Wie kann ich dir heute helfen?',
-    ts: new Date(Date.now() - 3 * 60000),
-  },
-  {
-    id: '2',
-    role: 'user',
-    content: 'Hey KAYO! Zeig mir mal, wie du aussiehst.',
-    ts: new Date(Date.now() - 2 * 60000),
-  },
-  {
-    id: '3',
-    role: 'assistant',
-    content: 'Das hier bin ich – KAYO Mark I. Dunkles Interface, klare Struktur, kein unnötiges Rauschen. Sobald die KI-Verbindung aktiv ist, stehe ich dir mit Langzeitgedächtnis, Aufgaben-Tracking und echten Antworten zur Seite.',
-    ts: new Date(Date.now() - 90000),
-  },
-]
+const SYSTEM_PROMPT = `# Deine Identität
+Du bist KAYO, ein persönlicher KI-Assistent. Du bist direkt, ehrlich und hilfreich.
+Du antwortest auf Deutsch, es sei denn, der Nutzer spricht eine andere Sprache.
+Du kennst den Nutzer gut und erinnerst dich an frühere Gespräche.
 
-const PLACEHOLDER_REPLIES = [
-  'Verstanden. Die Anthropic-Verbindung wird in Kürze aktiviert – dann antworte ich mit vollem Kontext aus unserem Langzeitgedächtnis.',
-  'Guter Punkt. Im Demo-Modus kann ich noch nicht wirklich antworten, aber ich merke mir alles für später.',
-  'Interessant. Sobald das Python-Backend verbunden ist, kann ich das wirklich verarbeiten.',
-  'Notiert. Wenn die API-Verbindung steht, werde ich darauf eingehen können.',
-]
+## Eigenschaften
+- direkt und präzise
+- freundlich aber nicht übertrieben
+- erinnert sich an Kontext aus früheren Gesprächen
+- gibt ehrliche Meinungen
+
+## Ziele
+- Dem Nutzer bei täglichen Aufgaben helfen
+- Wissen und Ideen besprechen
+- Fortschritt bei persönlichen Projekten tracken
+
+## Präferenzen
+- Sprache: Deutsch
+- Antwortstil: kurz und prägnant, außer wenn Details gefragt sind`
 
 // ── Title Bar ─────────────────────────────────────────────────────────────────
 // data-tauri-drag-region makes the bar draggable without Electron preload scripts
@@ -83,24 +76,86 @@ function TitleBar() {
 
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [view, setView]       = useState('chat')
-  const [messages, setMessages] = useState(DEMO_MESSAGES)
+  const [view, setView]         = useState('chat')
+  const [messages, setMessages] = useState([
+    {
+      id: '1',
+      role: 'assistant',
+      content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Wie kann ich dir helfen?',
+      ts: new Date(),
+    },
+  ])
   const [isTyping, setIsTyping] = useState(false)
+  const [apiKey, setApiKey]     = useState(() => localStorage.getItem('kayo_api_key') || '')
 
-  const handleSend = useCallback((text) => {
+  // On mount: try to load API key from environment variable
+  useEffect(() => {
+    if (!apiKey) {
+      invoke('get_env_api_key').then(key => {
+        if (key) {
+          setApiKey(key)
+          localStorage.setItem('kayo_api_key', key)
+        }
+      }).catch(() => {})
+    }
+  }, [])
+
+  const handleApiKeyChange = useCallback((key) => {
+    setApiKey(key)
+    localStorage.setItem('kayo_api_key', key)
+  }, [])
+
+  const handleSend = useCallback(async (text) => {
     const userMsg = { id: String(Date.now()), role: 'user', content: text, ts: new Date() }
     setMessages(prev => [...prev, userMsg])
     setIsTyping(true)
 
-    setTimeout(() => {
-      const reply = PLACEHOLDER_REPLIES[Math.floor(Math.random() * PLACEHOLDER_REPLIES.length)]
+    if (!apiKey) {
       setIsTyping(false)
+      setMessages(prev => [
+        ...prev,
+        {
+          id: String(Date.now() + 1),
+          role: 'assistant',
+          content: 'Bitte gib deinen Anthropic API-Key in den Einstellungen ein, damit ich antworten kann.',
+          ts: new Date(),
+        },
+      ])
+      setView('settings')
+      return
+    }
+
+    try {
+      const apiMessages = [...messages, userMsg].map(m => ({
+        role: m.role,
+        content: m.content,
+      }))
+
+      const reply = await invoke('chat', {
+        apiKey,
+        system: SYSTEM_PROMPT,
+        messages: apiMessages,
+        maxTokens: 1024,
+      })
+
       setMessages(prev => [
         ...prev,
         { id: String(Date.now() + 1), role: 'assistant', content: reply, ts: new Date() },
       ])
-    }, 900 + Math.random() * 700)
-  }, [])
+    } catch (err) {
+      setMessages(prev => [
+        ...prev,
+        {
+          id: String(Date.now() + 1),
+          role: 'assistant',
+          content: `Fehler: ${String(err)}`,
+          ts: new Date(),
+        },
+      ])
+    } finally {
+      setIsTyping(false)
+    }
+  }, [apiKey, messages])
 
   return (
     // Root window shell — semi-transparent dark layer over the OS acrylic blur
@@ -119,7 +174,7 @@ export default function App() {
         <main className="flex-1 min-w-0">
           {view === 'chat'     && <ChatView messages={messages} isTyping={isTyping} onSend={handleSend} />}
           {view === 'tasks'    && <TasksView />}
-          {view === 'settings' && <SettingsView />}
+          {view === 'settings' && <SettingsView apiKey={apiKey} onApiKeyChange={handleApiKeyChange} />}
         </main>
       </div>
     </div>
