@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react'
 import { Bot } from 'lucide-react'
 import MessageBubble from './MessageBubble.jsx'
 import InputBar from './InputBar.jsx'
+import ModelSelector from './ModelSelector.jsx'
 
 function TypingIndicator() {
   return (
@@ -38,7 +39,17 @@ export function KayoAvatar({ size = 28 }) {
   )
 }
 
-export default function ChatView({ messages, isTyping, onSend }) {
+export default function ChatView({
+  messages,
+  isTyping,
+  onSend,
+  selectedProvider,
+  selectedModel,
+  setProvider,
+  setModel,
+  keyStatus,
+  onOpenSettings,
+}) {
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -84,8 +95,18 @@ export default function ChatView({ messages, isTyping, onSend }) {
 
       {/* Input area */}
       <div className="shrink-0 px-6 pb-5 pt-2">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-2xl mx-auto flex flex-col gap-2">
           <InputBar onSend={onSend} disabled={isTyping} />
+          <div className="flex items-center px-1">
+            <ModelSelector
+              selectedProvider={selectedProvider}
+              selectedModel={selectedModel}
+              setProvider={setProvider}
+              setModel={setModel}
+              keyStatus={keyStatus}
+              onOpenSettings={onOpenSettings}
+            />
+          </div>
         </div>
       </div>
     </div>
