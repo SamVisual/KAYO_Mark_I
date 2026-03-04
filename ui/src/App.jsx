@@ -6,8 +6,9 @@ import Sidebar from './components/Sidebar.jsx'
 import ChatView from './components/ChatView.jsx'
 import TasksView from './components/TasksView.jsx'
 import SettingsView from './components/SettingsView.jsx'
+import useMemory from './hooks/useMemory.js'
 
-const SYSTEM_PROMPT = `# Deine Identität
+const BASE_SYSTEM_PROMPT = `# Deine Identität
 Du bist KAYO, ein persönlicher KI-Assistent. Du bist direkt, ehrlich und hilfreich.
 Du antwortest auf Deutsch, es sei denn, der Nutzer spricht eine andere Sprache.
 Du kennst den Nutzer gut und erinnerst dich an frühere Gespräche.
@@ -74,6 +75,20 @@ function TitleBar() {
   )
 }
 
+// ── Build system prompt with memory context ──────────────────────────────────
+function buildSystemPrompt(memories) {
+  if (!memories || memories.length === 0) return BASE_SYSTEM_PROMPT
+  const memoryLines = memories.map(m => {
+    const role = m.metadata?.role === 'user' ? 'Nutzer' : 'KAYO'
+    return `- [${role}] ${m.content}`
+  }).join('\n')
+  return `${BASE_SYSTEM_PROMPT}
+
+## Relevante Erinnerungen aus früheren Gesprächen
+${memoryLines}
+Nutze diese Erinnerungen wenn relevant, erwähne sie aber nicht explizit außer der Nutzer fragt danach.`
+}
+
 // ── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [view, setView]         = useState('chat')
@@ -87,6 +102,7 @@ export default function App() {
   ])
   const [isTyping, setIsTyping] = useState(false)
   const [apiKey, setApiKey]     = useState(() => localStorage.getItem('kayo_api_key') || '')
+  const memory = useMemory()
 
   // On mount: try to load API key from environment variable
   useEffect(() => {
@@ -126,6 +142,10 @@ export default function App() {
     }
 
     try {
+      // Search semantic memory for relevant past conversations
+      const memories = await memory.searchMemory(text, 5)
+      const systemPrompt = buildSystemPrompt(memories)
+
       const apiMessages = [...messages, userMsg].map(m => ({
         role: m.role,
         content: m.content,
@@ -133,7 +153,7 @@ export default function App() {
 
       const reply = await invoke('chat', {
         apiKey,
-        system: SYSTEM_PROMPT,
+        system: systemPrompt,
         messages: apiMessages,
         maxTokens: 1024,
       })
@@ -142,6 +162,10 @@ export default function App() {
         ...prev,
         { id: String(Date.now() + 1), role: 'assistant', content: reply, ts: new Date() },
       ])
+
+      // Save both messages to long-term memory
+      memory.addMessage(text, 'user')
+      memory.addMessage(reply, 'assistant')
     } catch (err) {
       setMessages(prev => [
         ...prev,
@@ -155,7 +179,7 @@ export default function App() {
     } finally {
       setIsTyping(false)
     }
-  }, [apiKey, messages])
+  }, [apiKey, messages, memory])
 
   return (
     // Root window shell — semi-transparent dark layer over the OS acrylic blur
