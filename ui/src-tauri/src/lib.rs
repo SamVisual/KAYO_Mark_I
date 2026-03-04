@@ -1,3 +1,5 @@
+pub mod self_mod;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -309,12 +311,23 @@ pub fn run() {
 
             Ok(())
         })
+        .manage(self_mod::SelfModState::default())
         .invoke_handler(tauri::generate_handler![
             chat,
             get_app_data_dir,
             save_api_key,
             has_api_key,
             clear_api_key,
+            // Self-modification pipeline
+            self_mod::stage_change,
+            self_mod::get_staged_changes,
+            self_mod::get_staged_count,
+            self_mod::apply_staged_changes,
+            self_mod::discard_staged_changes,
+            self_mod::discard_single_change,
+            self_mod::run_staged_preview,
+            self_mod::stop_preview,
+            self_mod::get_console_output,
         ])
         .run(tauri::generate_context!())
         .expect("error while running KAYO application")

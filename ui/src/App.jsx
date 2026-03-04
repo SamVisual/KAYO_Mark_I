@@ -6,17 +6,43 @@ import Sidebar from './components/Sidebar.jsx'
 import ChatView from './components/ChatView.jsx'
 import TasksView from './components/TasksView.jsx'
 import SettingsView from './components/SettingsView.jsx'
+import SelfModView from './components/SelfModView.jsx'
 import { useModel } from './hooks/useModel.js'
 import { PROVIDERS } from './config/models.js'
 
-const DEMO_MESSAGES = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Wähle unten ein Modell und hinterlege deinen API Key in den Einstellungen. Dann können wir loslegen!',
-    ts: new Date(Date.now() - 3 * 60000),
-  },
-]
+// ── System prompt ─────────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `Du bist KAYO, ein persönlicher KI-Assistent mit der Fähigkeit zur Selbstmodifikation.
+
+Wenn du Änderungen am KAYO-Quellcode vorschlägst, verwende EXAKT dieses Format:
+<kayo:proposal>
+{"file":"src/components/Beispiel.jsx","description":"Kurze Beschreibung","content":"...vollständiger neuer Dateiinhalt..."}
+</kayo:proposal>
+
+Regeln für Proposals:
+- "file" ist immer ein relativer Pfad ab dem ui/-Verzeichnis (z.B. "src/App.jsx")
+- "content" enthält den vollständigen neuen Dateiinhalt, niemals ein Diff
+- Erkläre die Änderung im Text VOR dem Proposal-Block
+- Maximal 3 Proposals pro Antwort
+- Proposals nur wenn der User explizit Codeänderungen wünscht
+
+Antworte präzise und hilfreich auf Deutsch.`
+
+// ── Proposal parser ───────────────────────────────────────────────────────────
+const PROPOSAL_RE = /<kayo:proposal>\s*([\s\S]*?)\s*<\/kayo:proposal>/g
+
+function extractProposals(text) {
+  const out = []
+  let m
+  PROPOSAL_RE.lastIndex = 0
+  while ((m = PROPOSAL_RE.exec(text)) !== null) {
+    try { out.push(JSON.parse(m[1])) } catch { /* skip malformed */ }
+  }
+  return out
+}
+
+function stripProposals(text) {
+  return text.replace(/<kayo:proposal>[\s\S]*?<\/kayo:proposal>/g, '').trim()
+}
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ toasts }) {
@@ -25,13 +51,21 @@ function Toast({ toasts }) {
       {toasts.map(t => (
         <div
           key={t.id}
-          className="px-4 py-2.5 rounded-xl text-xs font-medium anim-fade-up"
+          className="px-4 py-2.5 rounded-xl text-xs font-medium anim-fade-up max-w-xs"
           style={{
             background: t.type === 'error'
               ? 'rgba(239,68,68,0.18)'
-              : 'rgba(74,222,128,0.18)',
-            border: `1px solid ${t.type === 'error' ? 'rgba(239,68,68,0.35)' : 'rgba(74,222,128,0.35)'}`,
-            color:  t.type === 'error' ? '#fca5a5' : '#86efac',
+              : t.type === 'info'
+                ? 'rgba(129,140,248,0.18)'
+                : 'rgba(74,222,128,0.18)',
+            border: `1px solid ${
+              t.type === 'error'  ? 'rgba(239,68,68,0.35)'
+              : t.type === 'info' ? 'rgba(129,140,248,0.35)'
+              :                     'rgba(74,222,128,0.35)'
+            }`,
+            color: t.type === 'error'  ? '#fca5a5'
+                 : t.type === 'info'   ? '#a5b4fc'
+                 :                       '#86efac',
             backdropFilter: 'blur(12px)',
           }}
         >
@@ -44,24 +78,21 @@ function Toast({ toasts }) {
 
 function useToast() {
   const [toasts, setToasts] = useState([])
-
-  const addToast = useCallback((message, type = 'info', duration = 4000) => {
-    const id = String(Date.now() + Math.random())
+  const addToast = useCallback((message, type = 'info', duration = 4500) => {
+    const id = `${Date.now()}-${Math.random()}`
     setToasts(prev => [...prev, { id, message, type }])
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration)
   }, [])
-
   return { toasts, addToast }
 }
 
 // ── Title Bar ─────────────────────────────────────────────────────────────────
 function TitleBar() {
   const win = getCurrentWindow()
-
   const controls = [
-    { label: '−', action: () => win.minimize(),        hover: 'hover:bg-white/10'   },
+    { label: '−',  action: () => win.minimize(),        hover: 'hover:bg-white/10'    },
     { label: '⬜', action: () => win.toggleMaximize(), hover: 'hover:bg-white/10', small: true },
-    { label: '✕', action: () => win.close(),           hover: 'hover:bg-red-500/80', hoverText: 'hover:text-white' },
+    { label: '✕',  action: () => win.close(),           hover: 'hover:bg-red-500/80', hoverText: 'hover:text-white' },
   ]
 
   return (
@@ -81,7 +112,6 @@ function TitleBar() {
           KAYO Mark I
         </span>
       </div>
-
       <div className="no-drag flex items-center gap-0.5">
         {controls.map(({ label, action, hover, hoverText, small }) => (
           <button
@@ -98,21 +128,26 @@ function TitleBar() {
   )
 }
 
-// ── Root App ─────────────────────────────────────────────────────────────────
+// ── Root App ──────────────────────────────────────────────────────────────────
+const DEMO_MESSAGES = [
+  {
+    id:      '1',
+    role:    'assistant',
+    content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent mit Selbstmodifikations-Fähigkeit. Wähle ein Modell, hinterlege deinen API Key und bitte mich, den Code zu ändern – Vorschläge werden sicher gestaged und im Code-Tab zur Überprüfung bereitgestellt.',
+    ts:      new Date(Date.now() - 3 * 60000),
+  },
+]
+
 export default function App() {
-  const [view,     setView]     = useState('chat')
-  const [messages, setMessages] = useState(DEMO_MESSAGES)
-  const [isTyping, setIsTyping] = useState(false)
-  const [keyStatus, setKeyStatus] = useState({
-    anthropic: false,
-    openai:    false,
-    google:    false,
-  })
+  const [view,       setView]       = useState('chat')
+  const [messages,   setMessages]   = useState(DEMO_MESSAGES)
+  const [isTyping,   setIsTyping]   = useState(false)
+  const [keyStatus,  setKeyStatus]  = useState({ anthropic: false, openai: false, google: false })
+  const [stageBadge, setStageBadge] = useState(0)
 
   const { selectedProvider, selectedModel, setProvider, setModel } = useModel()
   const { toasts, addToast } = useToast()
 
-  // Refresh key status on mount and when Settings reports a change
   const refreshKeyStatus = useCallback(async () => {
     const result = {}
     await Promise.all(
@@ -123,31 +158,63 @@ export default function App() {
     setKeyStatus(result)
   }, [])
 
-  useEffect(() => { refreshKeyStatus() }, [refreshKeyStatus])
+  useEffect(() => {
+    refreshKeyStatus()
+    invoke('get_staged_count').then(n => setStageBadge(n)).catch(() => {})
+  }, [refreshKeyStatus])
 
+  // ── Message send handler ──────────────────────────────────────────────────
   const handleSend = useCallback(async (text) => {
     const userMsg = { id: String(Date.now()), role: 'user', content: text, ts: new Date() }
     setMessages(prev => [...prev, userMsg])
     setIsTyping(true)
 
     try {
-      // Build messages array for the API (exclude demo assistant greeting if only 1 msg)
-      const history = [...messages, userMsg].map(m => ({
-        role:    m.role,
-        content: m.content,
-      }))
+      const history = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }))
 
-      const reply = await invoke('chat', {
+      const rawReply = await invoke('chat', {
         provider:   selectedProvider,
         model:      selectedModel,
-        system:     'Du bist KAYO, ein persönlicher KI-Assistent. Antworte präzise und hilfreich auf Deutsch.',
+        system:     SYSTEM_PROMPT,
         messages:   history,
-        maxTokens:  1024,
+        maxTokens:  2048,
       })
+
+      // Parse code proposals and auto-stage them
+      const proposals = extractProposals(rawReply)
+      const cleanText = stripProposals(rawReply)
+
+      if (proposals.length > 0) {
+        let staged = 0
+        for (const p of proposals) {
+          try {
+            await invoke('stage_change', {
+              filePath:    p.file,
+              newContent:  p.content,
+              description: p.description ?? `Änderung in ${p.file}`,
+            })
+            staged++
+          } catch (e) {
+            addToast(`Staging fehlgeschlagen (${p.file}): ${e}`, 'error')
+          }
+        }
+        if (staged > 0) {
+          setStageBadge(n => n + staged)
+          addToast(
+            `${staged} Codeänderung${staged !== 1 ? 'en' : ''} gestaged – im Code-Tab prüfen`,
+            'info',
+          )
+        }
+      }
 
       setMessages(prev => [
         ...prev,
-        { id: String(Date.now() + 1), role: 'assistant', content: reply, ts: new Date() },
+        {
+          id:      String(Date.now() + 1),
+          role:    'assistant',
+          content: cleanText || '(Nur Code-Proposals – im Code-Tab prüfen)',
+          ts:      new Date(),
+        },
       ])
     } catch (err) {
       const errStr = String(err)
@@ -158,11 +225,9 @@ export default function App() {
         addToast(`Kein API Key für ${name} – bitte in den Einstellungen hinterlegen.`, 'error')
         setView('settings')
       } else if (errStr.includes('401') || errStr.includes('invalid_api_key') || errStr.includes('Unauthorized')) {
-        const name = PROVIDERS[selectedProvider]?.name ?? selectedProvider
-        addToast(`API Key für ${name} ungültig – bitte prüfen.`, 'error')
+        addToast(`API Key für ${PROVIDERS[selectedProvider]?.name ?? selectedProvider} ungültig.`, 'error')
       } else if (errStr.includes('Network error') || errStr.includes('connection')) {
-        const name = PROVIDERS[selectedProvider]?.name ?? selectedProvider
-        addToast(`Verbindung zu ${name} fehlgeschlagen – prüfe deine Internetverbindung.`, 'error')
+        addToast(`Verbindung zu ${PROVIDERS[selectedProvider]?.name ?? selectedProvider} fehlgeschlagen.`, 'error')
       } else {
         addToast(`Fehler: ${errStr}`, 'error')
       }
@@ -183,7 +248,7 @@ export default function App() {
     >
       <TitleBar />
       <div className="flex flex-1 min-h-0">
-        <Sidebar currentView={view} onNavigate={setView} />
+        <Sidebar currentView={view} onNavigate={setView} stageBadge={stageBadge} />
         <main className="flex-1 min-w-0">
           {view === 'chat' && (
             <ChatView
@@ -199,10 +264,11 @@ export default function App() {
             />
           )}
           {view === 'tasks'    && <TasksView />}
+          {view === 'code'     && (
+            <SelfModView onStageCountChange={count => setStageBadge(count)} />
+          )}
           {view === 'settings' && (
-            <SettingsView onKeyStatusChange={(status) => {
-              setKeyStatus(status)
-            }} />
+            <SettingsView onKeyStatusChange={status => setKeyStatus(status)} />
           )}
         </main>
       </div>

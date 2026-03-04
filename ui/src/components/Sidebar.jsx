@@ -1,17 +1,18 @@
-import { MessageSquare, CheckSquare, Settings, Zap } from 'lucide-react'
+import { MessageSquare, CheckSquare, Settings, Zap, GitBranch } from 'lucide-react'
 
-const NAV = [
-  { id: 'chat',     Icon: MessageSquare, label: 'Chat' },
-  { id: 'tasks',    Icon: CheckSquare,   label: 'Aufgaben' },
-  { id: 'settings', Icon: Settings,      label: 'Einstellungen' },
-]
+export default function Sidebar({ currentView, onNavigate, stageBadge = 0 }) {
+  const NAV = [
+    { id: 'chat',     Icon: MessageSquare, label: 'Chat',          badge: 0          },
+    { id: 'tasks',    Icon: CheckSquare,   label: 'Aufgaben',      badge: 0          },
+    { id: 'code',     Icon: GitBranch,     label: 'Code · Staging', badge: stageBadge },
+    { id: 'settings', Icon: Settings,      label: 'Einstellungen', badge: 0          },
+  ]
 
-export default function Sidebar({ currentView, onNavigate }) {
   return (
     <aside
       className="flex flex-col items-center py-4 gap-1 shrink-0"
       style={{
-        width: 68,
+        width:       68,
         borderRight: '1px solid rgba(255,255,255,0.06)',
         background:  'rgba(255,255,255,0.02)',
       }}
@@ -26,7 +27,7 @@ export default function Sidebar({ currentView, onNavigate }) {
 
       {/* Nav items */}
       <nav className="flex flex-col items-center gap-1 flex-1">
-        {NAV.map(({ id, Icon, label }) => {
+        {NAV.map(({ id, Icon, label, badge }) => {
           const active = currentView === id
           return (
             <button
@@ -45,6 +46,16 @@ export default function Sidebar({ currentView, onNavigate }) {
                 size={18}
                 style={{ color: active ? '#818cf8' : 'rgba(255,255,255,0.4)', transition: 'color 0.15s' }}
               />
+
+              {/* Staged-count badge */}
+              {badge > 0 && (
+                <span
+                  className="absolute top-1 right-1 min-w-[14px] h-3.5 rounded-full flex items-center justify-center text-[9px] font-bold leading-none px-1"
+                  style={{ background: 'linear-gradient(135deg,#818cf8,#a78bfa)', color: 'white' }}
+                >
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
 
               {/* Active indicator bar */}
               {active && (
