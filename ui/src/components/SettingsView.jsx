@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+import { safeInvoke as invoke } from '../tauri.js'
 import { Settings, Eye, EyeOff, Trash2, CheckCircle2, AlertCircle } from 'lucide-react'
 
 export default function SettingsView({ apiKey, setApiKey, onSaved }) {

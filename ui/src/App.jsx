@@ -1,9 +1,7 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Zap, Bot, Brain, FolderOpen, Clock } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { invoke } from '@tauri-apps/api/core'
-
-const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window
+import { IS_TAURI, safeInvoke as invoke } from './tauri.js'
 import Sidebar      from './components/Sidebar.jsx'
 import HomeView     from './components/HomeView.jsx'
 import ChatView     from './components/ChatView.jsx'
