@@ -45,13 +45,15 @@ function buildSystemPrompt(memories, agentKey) {
   return prompt
 }
 
-// Seed welcome message – flagged system:true so it's never sent to the API.
-const WELCOME_MSG = {
-  id:      '0',
-  role:    'assistant',
-  content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Ich erinnere mich an unsere Gespräche und lerne dich kennen. Wie kann ich dir heute helfen?',
-  ts:      new Date(),
-  system:  true,
+// Factory so every "Neuer Chat" gets a fresh timestamp (BUG #5).
+function makeWelcomeMsg() {
+  return {
+    id:      '0',
+    role:    'assistant',
+    content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Ich erinnere mich an unsere Gespräche und lerne dich kennen. Wie kann ich dir heute helfen?',
+    ts:      new Date(),
+    system:  true,
+  }
 }
 
 // ── Coming-soon placeholder ───────────────────────────────────────────────────
@@ -125,7 +127,7 @@ function TitleBar() {
 
 export default function App() {
   const [view, setView]               = useState('home')
-  const [messages, setMessages]       = useState([WELCOME_MSG])
+  const [messages, setMessages]       = useState(() => [makeWelcomeMsg()])
   const [isTyping, setIsTyping]       = useState(false)
   const [apiKey, setApiKey]           = useState('')
   const [activeAgent, setActiveAgent] = useState('claude')
@@ -170,9 +172,11 @@ export default function App() {
         max_tokens: 1024,
       })
 
-      // Persist exchange to long-term memory (fire-and-forget).
-      invoke('memory_save', { role: 'user',      content: text  }).catch(() => {})
-      invoke('memory_save', { role: 'assistant', content: reply }).catch(() => {})
+      // Persist exchange sequentially to avoid race condition (BUG #2):
+      // both saves modify the same JSON file; concurrent writes lose one entry.
+      invoke('memory_save', { role: 'user', content: text })
+        .then(() => invoke('memory_save', { role: 'assistant', content: reply }))
+        .catch(() => {})
 
       setMessages(prev => [
         ...prev,
@@ -204,7 +208,7 @@ export default function App() {
 
   // Reset to fresh Home view.
   const handleNewChat = useCallback(() => {
-    setMessages([WELCOME_MSG])
+    setMessages([makeWelcomeMsg()])
     nextId.current = 1
     setView('home')
   }, [])
@@ -229,6 +233,8 @@ export default function App() {
           currentView={view}
           onNavigate={setView}
           onNewChat={handleNewChat}
+          activeAgent={activeAgent}
+          onContextChange={setActiveAgent}
         />
 
         <main className="flex-1 min-w-0 relative">

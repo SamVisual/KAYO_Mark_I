@@ -26,11 +26,23 @@ const CONTEXTS = [
   { id: 'finanzen', label: 'Finanzen' },
 ]
 
+// Maps sidebar context IDs to the agent keys used in App.jsx
+const CONTEXT_TO_AGENT = {
+  coding:   'coder',
+  alltag:   'alltag',
+  finanzen: 'finanzen',
+}
+const AGENT_TO_CONTEXT = Object.fromEntries(
+  Object.entries(CONTEXT_TO_AGENT).map(([c, a]) => [a, c])
+)
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export default function Sidebar({ currentView, onNavigate, onNewChat }) {
-  const [hoveredId, setHoveredId]         = useState(null)
-  const [activeContext, setActiveContext] = useState(null)
+export default function Sidebar({ currentView, onNavigate, onNewChat, activeAgent, onContextChange }) {
+  const [hoveredId, setHoveredId] = useState(null)
+
+  // Derive active context from the parent's activeAgent state (BUG #3)
+  const activeContext = AGENT_TO_CONTEXT[activeAgent] ?? null
 
   // 'chat' and 'home' views both correspond to the Chat nav item
   const effectiveView = currentView === 'home' ? 'chat' : currentView
@@ -140,7 +152,7 @@ export default function Sidebar({ currentView, onNavigate, onNewChat }) {
             return (
               <button
                 key={id}
-                onClick={() => setActiveContext(on ? null : id)}
+                onClick={() => onContextChange(on ? 'claude' : CONTEXT_TO_AGENT[id])}
                 className="font-mono-label px-2 py-1 rounded-md transition-all duration-150"
                 style={{
                   background: on ? 'rgba(0,212,255,0.12)' : 'rgba(255,255,255,0.04)',

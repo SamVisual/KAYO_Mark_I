@@ -297,7 +297,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             chat,
-            get_app_data_dir,
             save_api_key,
             load_api_key,
             memory_save,

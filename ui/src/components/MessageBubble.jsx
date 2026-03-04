@@ -1,10 +1,11 @@
-import { KayoAvatar } from './ChatView.jsx'
+import { memo } from 'react'
+import { KayoAvatar } from './KayoAvatar.jsx'
 
 function fmt(date) {
   return new Intl.DateTimeFormat('de-DE', { hour: '2-digit', minute: '2-digit' }).format(date)
 }
 
-export default function MessageBubble({ message, groupWithPrev }) {
+export default memo(function MessageBubble({ message, groupWithPrev }) {
   const isKayo   = message.role === 'assistant'
   const spacing  = groupWithPrev ? 'mb-1' : 'mb-4'
   const showMeta = !groupWithPrev
@@ -60,4 +61,4 @@ export default function MessageBubble({ message, groupWithPrev }) {
       </div>
     </div>
   )
-}
+})
