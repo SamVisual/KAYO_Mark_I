@@ -2,6 +2,8 @@ import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { Zap, Bot, Brain, FolderOpen, Clock } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { invoke } from '@tauri-apps/api/core'
+
+const IS_TAURI = typeof window !== 'undefined' && '__TAURI__' in window
 import Sidebar      from './components/Sidebar.jsx'
 import HomeView     from './components/HomeView.jsx'
 import ChatView     from './components/ChatView.jsx'
@@ -86,13 +88,13 @@ function ComingSoon({ view }) {
 // ── Title Bar ─────────────────────────────────────────────────────────────────
 
 function TitleBar() {
-  const win                           = useMemo(() => getCurrentWindow(), [])
+  const win                           = useMemo(() => IS_TAURI ? getCurrentWindow() : null, [])
   const [hoveredCtrl, setHoveredCtrl] = useState(null)
 
   const controls = [
-    { id: 'min',   label: '−',  action: () => win.minimize(),        hoverBg: 'rgba(255,255,255,0.1)'  },
-    { id: 'max',   label: '⬜', action: () => win.toggleMaximize(), hoverBg: 'rgba(255,255,255,0.1)', small: true },
-    { id: 'close', label: '✕',  action: () => win.close(),           hoverBg: 'rgba(239,68,68,0.75)'  },
+    { id: 'min',   label: '−',  action: () => win?.minimize(),        hoverBg: 'rgba(255,255,255,0.1)'  },
+    { id: 'max',   label: '⬜', action: () => win?.toggleMaximize(), hoverBg: 'rgba(255,255,255,0.1)', small: true },
+    { id: 'close', label: '✕',  action: () => win?.close(),           hoverBg: 'rgba(239,68,68,0.75)'  },
   ]
 
   return (
@@ -226,7 +228,7 @@ export default function App() {
       {/* Film-grain texture overlay (defined in index.css) */}
       <div className="grain-overlay" />
 
-      <TitleBar />
+      {IS_TAURI && <TitleBar />}
 
       <div className="flex flex-1 min-h-0">
         <Sidebar
