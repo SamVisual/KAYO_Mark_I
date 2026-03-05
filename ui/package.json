@@ -2,6 +2,7 @@
   "name": "kayo-mark-i",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "KAYO Mark I – Personal AI Assistant Desktop App",
   "scripts": {
     "dev":        "tauri dev",

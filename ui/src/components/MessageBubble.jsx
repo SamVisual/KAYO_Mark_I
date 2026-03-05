@@ -9,6 +9,8 @@ export default function MessageBubble({ message, groupWithPrev }) {
   const spacing  = groupWithPrev ? 'mb-1' : 'mb-4'
   const showMeta = !groupWithPrev
 
+  const isError = message.isError
+
   if (isKayo) {
     return (
       <div className={`flex items-end gap-2.5 ${spacing} anim-slide-left`}>
@@ -21,9 +23,9 @@ export default function MessageBubble({ message, groupWithPrev }) {
           <div
             className="px-4 py-2.5 rounded-2xl rounded-bl-sm text-sm leading-relaxed"
             style={{
-              background: 'rgba(255,255,255,0.065)',
-              border:     '1px solid rgba(255,255,255,0.09)',
-              color:      'rgba(255,255,255,0.88)',
+              background: isError ? 'rgba(248,113,113,0.1)' : 'rgba(255,255,255,0.065)',
+              border:     isError ? '1px solid rgba(248,113,113,0.25)' : '1px solid rgba(255,255,255,0.09)',
+              color:      isError ? '#f87171' : 'rgba(255,255,255,0.88)',
             }}
           >
             {message.content}

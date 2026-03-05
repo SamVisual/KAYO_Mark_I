@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import { Bot } from 'lucide-react'
+import { Bot, AlertTriangle } from 'lucide-react'
 import MessageBubble from './MessageBubble.jsx'
 import InputBar from './InputBar.jsx'
 
@@ -38,7 +38,25 @@ export function KayoAvatar({ size = 28 }) {
   )
 }
 
-export default function ChatView({ messages, isTyping, onSend }) {
+function ApiKeyBanner({ onGoSettings }) {
+  return (
+    <div
+      className="mx-6 mt-3 px-4 py-3 rounded-xl flex items-center gap-3 anim-fade-up cursor-pointer"
+      style={{
+        background: 'rgba(250,204,21,0.08)',
+        border:     '1px solid rgba(250,204,21,0.2)',
+      }}
+      onClick={onGoSettings}
+    >
+      <AlertTriangle size={16} style={{ color: '#facc15', flexShrink: 0 }} />
+      <p className="text-xs" style={{ color: 'rgba(255,255,255,0.65)' }}>
+        Kein API Key hinterlegt. <span style={{ color: '#facc15', textDecoration: 'underline' }}>Einstellungen öffnen</span>
+      </p>
+    </div>
+  )
+}
+
+export default function ChatView({ messages, isTyping, onSend, hasKey, onGoSettings }) {
   const bottomRef = useRef(null)
 
   useEffect(() => {
@@ -62,10 +80,18 @@ export default function ChatView({ messages, isTyping, onSend }) {
 
         {/* Live status */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}>
-          <span className="w-2 h-2 rounded-full status-glow" style={{ background: '#4ade80' }} />
-          <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.45)' }}>Aktiv</span>
+          <span
+            className={`w-2 h-2 rounded-full ${hasKey ? 'status-glow' : ''}`}
+            style={{ background: hasKey ? '#4ade80' : '#facc15' }}
+          />
+          <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.45)' }}>
+            {hasKey ? 'Aktiv' : 'Kein Key'}
+          </span>
         </div>
       </div>
+
+      {/* API Key warning */}
+      {!hasKey && <ApiKeyBanner onGoSettings={onGoSettings} />}
 
       {/* Message list */}
       <div className="flex-1 overflow-y-auto px-6 py-5">

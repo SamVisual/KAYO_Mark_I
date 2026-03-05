@@ -1,48 +1,32 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Zap } from 'lucide-react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { invoke } from '@tauri-apps/api/core'
 import Sidebar from './components/Sidebar.jsx'
 import ChatView from './components/ChatView.jsx'
 import TasksView from './components/TasksView.jsx'
 import SettingsView from './components/SettingsView.jsx'
 
-const DEMO_MESSAGES = [
-  {
-    id: '1',
-    role: 'assistant',
-    content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Ich erinnere mich an unsere Gespräche und lerne dich kennen. Wie kann ich dir heute helfen?',
-    ts: new Date(Date.now() - 3 * 60000),
-  },
-  {
-    id: '2',
-    role: 'user',
-    content: 'Hey KAYO! Zeig mir mal, wie du aussiehst.',
-    ts: new Date(Date.now() - 2 * 60000),
-  },
-  {
-    id: '3',
-    role: 'assistant',
-    content: 'Das hier bin ich – KAYO Mark I. Dunkles Interface, klare Struktur, kein unnötiges Rauschen. Sobald die KI-Verbindung aktiv ist, stehe ich dir mit Langzeitgedächtnis, Aufgaben-Tracking und echten Antworten zur Seite.',
-    ts: new Date(Date.now() - 90000),
-  },
-]
+const SYSTEM_PROMPT = `Du bist KAYO, ein persönlicher KI-Assistent. Du bist direkt, ehrlich und hilfreich.
+Du antwortest auf Deutsch, es sei denn, der Nutzer spricht eine andere Sprache.
+Halte deine Antworten kurz und prägnant, außer wenn Details gefragt sind.`
 
-const PLACEHOLDER_REPLIES = [
-  'Verstanden. Die Anthropic-Verbindung wird in Kürze aktiviert – dann antworte ich mit vollem Kontext aus unserem Langzeitgedächtnis.',
-  'Guter Punkt. Im Demo-Modus kann ich noch nicht wirklich antworten, aber ich merke mir alles für später.',
-  'Interessant. Sobald das Python-Backend verbunden ist, kann ich das wirklich verarbeiten.',
-  'Notiert. Wenn die API-Verbindung steht, werde ich darauf eingehen können.',
-]
+const WELCOME_MSG = {
+  id: 'welcome',
+  role: 'assistant',
+  content: 'Hallo! Ich bin KAYO – dein persönlicher Assistent. Wie kann ich dir heute helfen?',
+  ts: new Date(),
+}
 
 // ── Title Bar ─────────────────────────────────────────────────────────────────
-// data-tauri-drag-region makes the bar draggable without Electron preload scripts
-function TitleBar() {
-  const win = getCurrentWindow()
 
+const appWindow = getCurrentWindow()
+
+function TitleBar() {
   const controls = [
-    { label: '−', action: () => win.minimize(),        hover: 'hover:bg-white/10'   },
-    { label: '⬜', action: () => win.toggleMaximize(), hover: 'hover:bg-white/10', small: true },
-    { label: '✕', action: () => win.close(),           hover: 'hover:bg-red-500/80', hoverText: 'hover:text-white' },
+    { label: '−', action: () => appWindow.minimize(),        hover: 'hover:bg-white/10' },
+    { label: '⬜', action: () => appWindow.toggleMaximize(), hover: 'hover:bg-white/10', small: true },
+    { label: '✕', action: () => appWindow.close(),           hover: 'hover:bg-red-500/80', hoverText: 'hover:text-white' },
   ]
 
   return (
@@ -51,7 +35,6 @@ function TitleBar() {
       className="drag flex items-center justify-between shrink-0 px-4"
       style={{ height: 40, borderBottom: '1px solid rgba(255,255,255,0.06)' }}
     >
-      {/* Left: Logo + name */}
       <div className="no-drag flex items-center gap-2 pointer-events-none">
         <div
           className="w-5 h-5 rounded-md flex items-center justify-center accent-glow"
@@ -64,7 +47,6 @@ function TitleBar() {
         </span>
       </div>
 
-      {/* Right: Window controls */}
       <div className="no-drag flex items-center gap-0.5">
         {controls.map(({ label, action, hover, hoverText, small }) => (
           <button
@@ -82,42 +64,69 @@ function TitleBar() {
 }
 
 // ── Root App ─────────────────────────────────────────────────────────────────
-export default function App() {
-  const [view, setView]       = useState('chat')
-  const [messages, setMessages] = useState(DEMO_MESSAGES)
-  const [isTyping, setIsTyping] = useState(false)
 
-  const handleSend = useCallback((text) => {
+export default function App() {
+  const [view, setView]         = useState('chat')
+  const [messages, setMessages] = useState([WELCOME_MSG])
+  const [isTyping, setIsTyping] = useState(false)
+  const [error, setError]       = useState(null)
+  const [hasKey, setHasKey]     = useState(false)
+
+  // Check API key status on mount and when switching back to chat
+  useEffect(() => {
+    invoke('has_api_key').then(setHasKey).catch(() => setHasKey(false))
+  }, [view])
+
+  const handleSend = useCallback(async (text) => {
+    setError(null)
+
     const userMsg = { id: String(Date.now()), role: 'user', content: text, ts: new Date() }
     setMessages(prev => [...prev, userMsg])
     setIsTyping(true)
 
-    setTimeout(() => {
-      const reply = PLACEHOLDER_REPLIES[Math.floor(Math.random() * PLACEHOLDER_REPLIES.length)]
-      setIsTyping(false)
+    try {
+      // Build message history for the API (only role + content)
+      const history = [...messages, userMsg]
+        .filter(m => m.id !== 'welcome')
+        .map(({ role, content }) => ({ role, content }))
+
+      const reply = await invoke('chat', {
+        system:   SYSTEM_PROMPT,
+        messages: history,
+      })
+
       setMessages(prev => [
         ...prev,
         { id: String(Date.now() + 1), role: 'assistant', content: reply, ts: new Date() },
       ])
-    }, 900 + Math.random() * 700)
-  }, [])
+    } catch (e) {
+      const errMsg = String(e)
+      setError(errMsg)
+      // Show error as system message so user sees it inline
+      setMessages(prev => [
+        ...prev,
+        { id: String(Date.now() + 1), role: 'assistant', content: `Fehler: ${errMsg}`, ts: new Date(), isError: true },
+      ])
+    } finally {
+      setIsTyping(false)
+    }
+  }, [messages])
 
   return (
-    // Root window shell — semi-transparent dark layer over the OS acrylic blur
     <div
       className="flex flex-col h-full"
       style={{
-        background:    'rgba(9, 9, 18, 0.87)',
-        borderRadius:  10,
-        overflow:      'hidden',
-        boxShadow:     '0 0 0 1px rgba(255,255,255,0.07), 0 24px 60px rgba(0,0,0,0.55)',
+        background:   'rgba(9, 9, 18, 0.87)',
+        borderRadius: 10,
+        overflow:     'hidden',
+        boxShadow:    '0 0 0 1px rgba(255,255,255,0.07), 0 24px 60px rgba(0,0,0,0.55)',
       }}
     >
       <TitleBar />
       <div className="flex flex-1 min-h-0">
         <Sidebar currentView={view} onNavigate={setView} />
         <main className="flex-1 min-w-0">
-          {view === 'chat'     && <ChatView messages={messages} isTyping={isTyping} onSend={handleSend} />}
+          {view === 'chat'     && <ChatView messages={messages} isTyping={isTyping} onSend={handleSend} error={error} hasKey={hasKey} onGoSettings={() => setView('settings')} />}
           {view === 'tasks'    && <TasksView />}
           {view === 'settings' && <SettingsView />}
         </main>
