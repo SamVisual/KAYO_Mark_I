@@ -36,6 +36,7 @@ pub struct AnthropicContent {
 #[tauri::command]
 async fn chat(
     api_key:    String,
+    model:      String,
     system:     String,
     messages:   Vec<ChatMessage>,
     max_tokens: Option<u32>,
@@ -43,7 +44,7 @@ async fn chat(
     let client = reqwest::Client::new();
 
     let body = AnthropicRequest {
-        model:      "claude-opus-4-6".to_string(),
+        model,
         max_tokens: max_tokens.unwrap_or(1024),
         system,
         messages,
